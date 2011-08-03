@@ -26,7 +26,7 @@ object KulaBuild extends Build {
 
   def specs2Framework = new TestFramework("org.specs2.runner.SpecsFramework")
   lazy val defaultSettings = baseSettings ++ Seq(
-    resolvers ++= Seq(scalaToolsReleases, scalaToolsSnapshots, akkaSnapshots),
+    resolvers ++= Seq(scalaToolsReleases, scalaToolsSnapshots, akkaSnapshots, sbtIdea),
 
     // compile options
     scalacOptions ++= Seq("-encoding", "UTF-8", "-optimise", "-deprecation", "-unchecked"),
@@ -44,9 +44,10 @@ object KulaBuild extends Build {
 
 object Resolvers
 {
-  val akkaSnapshots = "Typesafe Snapshots Repo" at "http://repo.typesafe.com/typesafe/snapshots"
-  val scalaToolsSnapshots = "snapshots" at "http://scala-tools.org/repo-snapshots"
-  val scalaToolsReleases  = "releases" at "http://scala-tools.org/repo-releases"
+  val akkaSnapshots       = "Typesafe Snapshots Repo" at "http://repo.typesafe.com/typesafe/snapshots"
+  val scalaToolsSnapshots = "Scala Tools Snapshots" at "http://scala-tools.org/repo-snapshots"
+  val scalaToolsReleases  = "Scala Tools Releases" at "http://scala-tools.org/repo-releases"
+  val sbtIdea             = "SBT IDEA Repo" at "http://mpeltonen.github.com/maven/"
 }
 
 object Dependencies 
@@ -64,9 +65,11 @@ object Dependency
     val Akka      = "2.0-20110716-000330"
     val Logback   = "0.9.28"
     val Specs2    = "1.5"
+    val SBTIDEA   = "0.10.0"
   }
 
-  val akka_actor    = "se.scalablesolutions.akka"   % "akka-actor"      % Versions.Akka
+  val akka_actor    = "se.scalablesolutions.akka"   %   "akka-actor"      % Versions.Akka
+  val sbt_idea      = "com.github.mpeltonen"        %%  "sbt-idea"        % Versions.SBTIDEA
 
   object Test
   {
