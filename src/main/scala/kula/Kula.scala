@@ -1,43 +1,30 @@
 package kula
 
 import jcuda._
+import jcuda.runtime._
 import jcuda.driver._
 import jcuda.driver.JCudaDriver._
 
 import akka.actor. {Actor, ActorRef, UntypedChannel}
+import akka.dispatch.Future
 import akka.event.EventHandler
 import akka.config.Supervision. {Permanent, OneForOneStrategy}
 
 
 
+
 object gpu
 {
-  import GPUActor._
+  import GPU._
 
-  def apply[T, U](fragment: =>T)(implicit carry: (T)=>U = {}) {
-    (GPUActor() ? HostCode(fragment _)) flatMap (result => carry(result))
+  def apply[T](fragment: =>T): Future[_] = {
+    GPU() ? HostCode(fragment _)
   }
 }
 
-
-//abstract class JCudaKernel
-//{
-//  private[kula] val _launcher: KernelLauncher
-//
-//  var gridSize: (Int, Int) = (1,1)
-//  var blockSize: (Int, Int, Int) = (1, 1, 1)
-//  var sharedMemSize: Int = 0
-//  var stream: Option[CUstream] = None
-//
-//  def apply(args: java.lang.Object*) {
-//    _launcher.call(args: _*)
-//  }
-//}
-
-
-class GPUActor extends Actor
+class GPU extends Actor
 {
-  import GPUActor._
+  import GPU._
   import collection.mutable.HashMap
   import akka.dispatch.Dispatchers
 
@@ -45,7 +32,10 @@ class GPUActor extends Actor
   private[kula] var _context: Option[CUcontext] = None
   private var       _kernels = HashMap.empty[String, CUmodule]
 
-  override def preStart {EventHandler.info(this, "Starting")}
+  override def preStart {
+    EventHandler.info(this, "Starting")
+    self ! Initialize
+  }
 
   private def _init {
     EventHandler.info(this, "Initializing")
@@ -64,40 +54,6 @@ class GPUActor extends Actor
     _context = Some(context)
   }
 
-  private def _loadmod(func: String, path: String, channel: UntypedChannel) {
-    try {
-      val module = new CUmodule
-      cuModuleLoad(module, func)
-
-      val function = new CUfunction
-      cuModuleGetFunction(function, module, func)
-
-      _kernels += (func -> module)
-      channel ! function
-    }
-  }
-
-  private def _launch(kern: Kernel) {
-    kernel(kern.func) match {
-      case Some(future) =>
-        val result = future.get
-        if (result.isInstanceOf[Exception])
-          throw result.asInstanceOf[Exception]
-
-        cuLaunchKernel(
-          result.asInstanceOf[CUfunction],
-          kern.grid._1, kern.grid._2, kern.grid._3,
-          kern.blocks._1, kern.blocks._2, kern.blocks._3,
-          0, null,  // shared memory & stream for now
-          Pointer.to(kern._params.map(_._1):_*),
-          null
-        )
-        cuCtxSynchronize
-        self.reply(kern)
-
-      case None => throw kernel.KernelNotFoundException(kern.func)
-    }
-  }
 
   // Use a thread-based dispatcher to guarantee everything happens on the same thread.
   self.dispatcher = Dispatchers.newPinnedDispatcher(self)
@@ -114,18 +70,49 @@ class GPUActor extends Actor
   //
   def receive = {
     case Initialize => _init
-    case LoadModule(func, path, channel) => _loadmod(func, path, channel)
-    case HostCode(fragment, receiver) => 
-      receiver match {
-        case Some(actor) => actor ! fragment()
-        case _init       => fragment()
+    case HostCode(fragment) => self.channel ! fragment()
+    
+    case LoadModule(path) => 
+      EventHandler.info(this, "Loading kernel module from "+path)
+      val module = new CUmodule
+      cuModuleLoad(module, path) match {
+        case CUresult.CUDA_SUCCESS => self.channel ! module
+        case result => throw new KernelCUDAException(result, path)
       }
-    case LaunchKernel(kernel: Kernel) => _launch(kernel)
+
+
+    case Launch(func: Function) =>
+      EventHandler.info(this, "Launching kernel function "+func.name)
+      println(func.params)
+      cuLaunchKernel(
+        func.function,
+        func.grid._1, func.grid._2, func.grid._3,
+        func.blocks._1, func.blocks._2, func.blocks._3,
+        0, null,  // shared memory & stream for now
+        Pointer.to(func.params.map(Pointer.to(_)) :_*),
+        null
+      )
+      cuCtxSynchronize
+      EventHandler.info(this, "Kernel function "+func.name+" complete")
+
+      val results = func.output.map { dev =>
+        val ptr = new Array[Float](dev._2)
+        //val buffer = java.nio.FloatBuffer.allocate(dev._2)
+        cuMemcpyDtoH(Pointer.to(ptr), dev._1, dev._2 * jcuda.Sizeof.FLOAT);   
+        ptr
+      }
+
+      EventHandler.info(this, "Returning results from kernel function "+func.name)
+      self.channel ! results
+
+      // free up device memory
+      func~
+
     case _ =>
   }
 } 
 
-object GPUActor
+object GPU
 {
   import akka.actor.MaximumNumberOfRestartsWithinTimeRangeReached
 
@@ -144,13 +131,13 @@ object GPUActor
     }
   }.start
 
-  private var _Actor: Option[ActorRef] = Some(apply())
+  private var _Actor: Option[ActorRef] = None
 
   private[kula] def apply(): ActorRef = {
     if (!_Actor.isDefined) {
-      val actor = Actor.actorOf[GPUActor]
+      val actor = Actor.actorOf[GPU]
       Supervisor startLink actor
-      actor ! Initialize
+      _Actor = Some(actor)
       actor
     }
     else
@@ -158,9 +145,9 @@ object GPUActor
   }
 
   case object Initialize
-  case class  HostCode[T](fragment: ()=>T, receiver: Option[ActorRef])
-  case class  LoadModule(func: String, path: String, channel: UntypedChannel)
-  case class  LaunchKernel(kernel: Kernel)
+  case class  HostCode[T](fragment: ()=>T)
+  case class  LoadModule(path: String)
+  case class  Launch(function: Function)
 }
 
 
