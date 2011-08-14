@@ -54,7 +54,7 @@ object Dependencies
 {
   import Dependency._
 
-  val kula = Seq(akka_actor, Test.specs2, Test.logback)
+  val kula = Seq(akka_actor, commons_codec, Test.specs2, Test.logback)
 
 }
 
@@ -62,14 +62,14 @@ object Dependency
 {
   object Versions 
   {
-    val Akka      = "2.0-20110716-000330"
-    val Logback   = "0.9.28"
-    val Specs2    = "1.5"
-    val SBTIDEA   = "0.10.0"
+    val Akka          = "2.0-20110716-000330"
+    val Logback       = "0.9.28"
+    val Specs2        = "1.5"
+    val CommonsCodec  = "1.5"
   }
 
   val akka_actor    = "se.scalablesolutions.akka"   %   "akka-actor"      % Versions.Akka
-  val sbt_idea      = "com.github.mpeltonen"        %%  "sbt-idea"        % Versions.SBTIDEA
+  val commons_codec = "commons-codec"               % "commons-codec"     % Versions.CommonsCodec
 
   object Test
   {

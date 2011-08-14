@@ -44,6 +44,14 @@ sealed class Kernel(val name: String, source: String, options: Option[Seq[String
     _functions.getOrElse(tag, bind)
   }
 
+  def unload = synchronized {
+    EventHandler.info(this, "Unloading kernel "+name)
+    _module.mapTo[CUmodule].foreach { module =>
+      _functions.foreach(_._2.free(true))
+      _functions.clear
+      gpu {cuModuleUnload(module)}
+    }
+  }
 
   private val _module: Future[_] = {
     source.split('.').toList.last match {
@@ -68,7 +76,6 @@ sealed class Kernel(val name: String, source: String, options: Option[Seq[String
     def receive = {
       case CompileFile(path, options) =>
         EventHandler.info(this, "Compiling kernel source from "+path)
-        //val cu = io.Source.fromFile(path).mkString
         val model = "-m" + System.getProperty("sun.arch.data.model")
         val ptxpath = path + ".ptx"
         val cmd = "nvcc " + model + " -ptx "+ path + " -o " + ptxpath + options.getOrElse(Seq("")).foldLeft("")(_+" "+_)
@@ -82,6 +89,24 @@ sealed class Kernel(val name: String, source: String, options: Option[Seq[String
           
           case code => throw new KernelCompilerException(code)
         }
+
+      case CompileSource(source, options) =>
+        import java.io. {File, FileWriter}
+        import java.security.MessageDigest
+        import org.apache.commons.codec.binary.Base64
+
+        val digest = Base64.encodeBase64URLSafeString(MessageDigest.getInstance("SHA").digest(source getBytes))
+        val tmp = new File(System.getProperty("java.io.tmpdir") +"/kula"+ digest +".cu")
+        if (tmp.exists) {
+          EventHandler.info(this, "Using cached kernel source from "+tmp.getAbsolutePath)
+        }
+        else {
+          EventHandler.info(this, "Caching kernel source to "+tmp.getAbsolutePath)
+          val writer = new FileWriter(tmp)
+          writer.write(source)
+          writer.close
+        }        
+        self forward CompileFile(tmp.getAbsolutePath, options)
     }
   }
 }
@@ -105,6 +130,20 @@ object kernel
       exists
   }  
 
+  def unload(tag: String) {
+    EventHandler.info(this, "Unloading all kernels")
+
+    val kern = _kernels.get(tag)
+    if (kern != null)
+      kern.unload
+  }
+
+  def unload {
+    import collection.JavaConversions._
+
+    asScalaConcurrentMap(_kernels).foreach(_._2.unload)
+    _kernels.clear
+  }
 
   /**
    * @param tag     the friendly name of the kernel
@@ -263,9 +302,10 @@ sealed class Function(val name: String, val function: CUfunction)
   }
 
   /**
-   * Clears any marked device memory 
+   * Clears device memory 
+   * @param force if true, frees even pointers marked for keeping
    */
-  def ~ {
+  def free(implicit force: Boolean = false) {
     _params.partition(_._3) match {
       case (_, List())  =>
       case (keep, free) =>

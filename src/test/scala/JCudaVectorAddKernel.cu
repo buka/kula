@@ -6,5 +6,4 @@ __global__ void add(int n, float *a, float *b, float *sum)
     {
         sum[i] = a[i] + b[i];
     }
-
 }

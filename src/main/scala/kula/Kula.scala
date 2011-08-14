@@ -11,31 +11,63 @@ import akka.event.EventHandler
 import akka.config.Supervision. {Permanent, OneForOneStrategy}
 
 
-
-
 object gpu
 {
   import GPU._
+  import java.util.concurrent.ConcurrentHashMap
+  import collection.JavaConversions._
 
   def apply[T](fragment: =>T): Future[_] = {
     GPU() ? HostCode(fragment _)
   }
+
+  def shutdown {
+    EventHandler.info(this, "Shutting down")
+    GPU.shutdown    
+    kernel.unload
+  }
+
+  private[kula] def _stash(index: Int, device: _Device) { asScalaConcurrentMap(_cache) += (index -> device) }
+  private[kula] def _unstash(index: Int): Option[_Device] = { asScalaConcurrentMap(_cache) remove index }
+  private val _cache = new ConcurrentHashMap[Int, _Device]
+  private[kula] case class _Device(device: Option[CUdevice], context: Option[CUcontext])
 }
 
-class GPU extends Actor
+private[kula] class GPU(index: Int) extends Actor
 {
+  import gpu._
   import GPU._
-  import collection.mutable.HashMap
   import akka.dispatch.Dispatchers
-
-  private[kula] var _device: Option[CUdevice] = None
-  private[kula] var _context: Option[CUcontext] = None
-  private var       _kernels = HashMap.empty[String, CUmodule]
 
   override def preStart {
     EventHandler.info(this, "Starting")
     self ! Initialize
   }
+
+  override def postStop {
+    EventHandler.info(this, "Stopping")
+    _context foreach { cuCtxDestroy _ }
+    _context = None
+    _device = None
+  }
+
+  override def preRestart(reason: Throwable) {
+    EventHandler.error(this, "Restarting due to "+reason.getMessage)
+    _stash(index, _Device(_device, _context))
+  }
+
+  override def postRestart(reason: Throwable) {
+    _unstash(index) match {
+      case Some(_Device(device, context)) =>
+        _device = device
+        _context = context
+      case _ =>
+    }
+    EventHandler.info(this, "Restarted")
+  }
+
+  private[kula] var _device: Option[CUdevice] = None
+  private[kula] var _context: Option[CUcontext] = None
 
   private def _init {
     EventHandler.info(this, "Initializing")
@@ -43,29 +75,22 @@ class GPU extends Actor
     // Enable exceptions and omit all subsequent error checks
     JCudaDriver.setExceptionsEnabled(true)
 
-    // Initialize the driver and create a context for the first device.
+    // Initialize the driver and create a context for the device.
     cuInit(0)
     val device = new CUdevice
-    cuDeviceGet(device, 0);
+    cuDeviceGet(device, index);
     val context = new CUcontext
-    cuCtxCreate(context, 0, device)
+    cuCtxCreate(context, index, device)
 
     _device = Some(device)
     _context = Some(context)
   }
-
 
   // Use a thread-based dispatcher to guarantee everything happens on the same thread.
   self.dispatcher = Dispatchers.newPinnedDispatcher(self)
 
   // For now we'll be permanent... this might change if we bind to multiple devices
   self.lifeCycle = Permanent
-
-  //override def postRestart(reason: Throwable) {
-  //  _context foreach { cuCtxDestroy _ }
-  //  _context = None
-  //  _device = None
-  //}
 
   //
   def receive = {
@@ -106,7 +131,7 @@ class GPU extends Actor
       self.channel ! results
 
       // free up device memory
-      func~
+      func free
 
     case _ =>
   }
@@ -114,12 +139,12 @@ class GPU extends Actor
 
 object GPU
 {
-  import akka.actor.MaximumNumberOfRestartsWithinTimeRangeReached
+  import akka.actor. {MaximumNumberOfRestartsWithinTimeRangeReached, PoisonPill}
 
   val Supervisor = Actor.actorOf {
     new Actor {
       override def preStart {EventHandler.info(this, "Starting")}
-      self.faultHandler = OneForOneStrategy(List(classOf[Throwable]), 10, 1000)
+      self.faultHandler = OneForOneStrategy(List(classOf[Throwable]), 5, 1000)
       def receive = {
         case MaximumNumberOfRestartsWithinTimeRangeReached(_, _, _, reason) =>
           EventHandler.error(reason, this, "Cannot restart GPU actor. Creating new instance... ")
@@ -133,15 +158,21 @@ object GPU
 
   private var _Actor: Option[ActorRef] = None
 
-  private[kula] def apply(): ActorRef = {
+  private[kula] def apply(implicit device: Int = 0): ActorRef = {
     if (!_Actor.isDefined) {
-      val actor = Actor.actorOf[GPU]
+      val actor = Actor.actorOf{ new GPU(device) }
       Supervisor startLink actor
       _Actor = Some(actor)
       actor
     }
     else
       _Actor.get
+  }
+
+  private [kula] def shutdown {
+    EventHandler.info(this, "Stopping GPU actor")
+    GPU() ? PoisonPill
+    _Actor = None
   }
 
   case object Initialize
