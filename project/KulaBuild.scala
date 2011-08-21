@@ -18,6 +18,14 @@ object KulaBuild extends Build {
     )
   )
 
+  lazy val kula_samples = Project(
+    id = "kula-samples",
+    base = file("samples"),
+    settings = defaultSettings ++ Seq(
+      libraryDependencies ++= Dependencies.kula_samples
+    )
+  ) dependsOn(kula)
+
   // Settings
 
   override lazy val settings = super.settings ++ buildSettings //++ Publish.versionSettings
@@ -54,7 +62,8 @@ object Dependencies
 {
   import Dependency._
 
-  val kula = Seq(akka_actor, commons_codec, Test.specs2, Test.logback)
+  val kula          = Seq(akka_actor, commons_codec, Test.specs2, Test.logback)
+  val kula_samples  = Seq(akka_actor)
 
 }
 

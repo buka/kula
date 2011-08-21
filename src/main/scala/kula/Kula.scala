@@ -23,8 +23,8 @@ object gpu
 
   def shutdown {
     EventHandler.info(this, "Shutting down")
-    GPU.shutdown    
     kernel.unload
+    GPU.shutdown    
   }
 
   private[kula] def _stash(index: Int, device: _Device) { asScalaConcurrentMap(_cache) += (index -> device) }
@@ -108,7 +108,6 @@ private[kula] class GPU(index: Int) extends Actor
 
     case Launch(func: Function) =>
       EventHandler.info(this, "Launching kernel function "+func.name)
-      println(func.params)
       cuLaunchKernel(
         func.function,
         func.grid._1, func.grid._2, func.grid._3,
@@ -171,7 +170,7 @@ object GPU
 
   private [kula] def shutdown {
     EventHandler.info(this, "Stopping GPU actor")
-    GPU() ? PoisonPill
+    (GPU() ? PoisonPill).get
     _Actor = None
   }
 
