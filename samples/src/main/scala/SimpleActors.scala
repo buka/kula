@@ -52,7 +52,7 @@ object SimpleActors
           EventHandler.debug(this, "waiting for input")
           input.get
           EventHandler.debug(this, "running kernel function")
-          self.channel ! (avg^ (blockSize, gridSize)).get
+          self.channel ! (avg^ (blockSize, gridSize)).get   // complete the future with the results
       }
     }}.start
 
@@ -62,7 +62,7 @@ object SimpleActors
   def main(args: Array[String]){
     val n = 250000   
     EventHandler.debug(this, "running with %d elements".format(n))
-    run(n).get    
+    val results = run(n).mapTo[List[Array[Float]]].get      // kernel returns a list of the output vectors
     EventHandler.debug(this, "done")
 
     gpu.shutdown
