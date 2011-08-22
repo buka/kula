@@ -14,7 +14,12 @@ If you have GCC 4.5 (or higher) installed, you need to install GCC 4.4 and 'down
 
     sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.5 40 --slave /usr/bin/g++ g++ /usr/bin/g++-4.5
     sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.4 60 --slave /usr/bin/g++ g++ /usr/bin/g++-4.4
-    sudo update-alternatives --config gcc'
+    sudo update-alternatives --config gcc
+    
+If you need to switch back to 4.5 say to compile the driver (see below) then you can always
+
+    sudo update-alternatives --config gcc
+    
 
 ### Installing the Dev Driver
 
