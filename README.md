@@ -12,9 +12,9 @@ First install [CUDA](http://developer.nvidia.com/cuda-downloads) and then JCuda.
 
 If you have GCC 4.5 (or higher) installed, you need to install GCC 4.4 and 'downgrade' your default compiler.  If you're using Ubuntu check out this from Ben McCann (http://www.benmccann.com/dev-blog/installing-cuda-and-theano/) and use this bit:
 
-  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.5 40 --slave /usr/bin/g++ g++ /usr/bin/g++-4.5
-  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.4 60 --slave /usr/bin/g++ g++ /usr/bin/g++-4.4
-  sudo update-alternatives --config gcc
+    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.5 40 --slave /usr/bin/g++ g++ /usr/bin/g++-4.5
+    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.4 60 --slave /usr/bin/g++ g++ /usr/bin/g++-4.4
+    sudo update-alternatives --config gcc'
 
 ### Installing the Dev Driver
 
